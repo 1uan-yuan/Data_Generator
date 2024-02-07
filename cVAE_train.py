@@ -18,15 +18,21 @@ from sklearn.model_selection import train_test_split
 from tensorflow.python.framework.ops import disable_eager_execution
 disable_eager_execution()
 
-X_acce = psd.regex_get_acc(set_num=0, choosing="nodding") # sensor data
+X_acce, frequency_x = psd.regex_get_acc(set_num=0, choosing="shaking") # sensor data
 # Shaking accelerometer data from time: 14:33:50:25 to 14:35:56:455
 # Nodding accelerometer data from time: 14:37:43:959 to 14:39:48:394
-y_acce = pk.get_nodding(set_num=0) # head position data
+y_acce = pk.get_shaking(set_num=0) # head position data
 # shaking from time: 14:33:51:355 to 14:35:52:195
 # nodding from time: 14:37:45:532 to 14:39:44:612
 
 X_acce = np.array(X_acce, dtype=np.float32)
 y_acce = np.array(y_acce, dtype=np.float32)
+
+# normalize the data
+min_X, max_X = X_acce.min(), X_acce.max()
+X_acce = np.subtract(X_acce, min_X) / (max_X - min_X)
+min_y, max_y = y_acce.min(), y_acce.max()
+y_acce = np.subtract(y_acce, min_y) / (max_y - min_y)
 
 # print(np.isnan(X_acce).any(), np.isnan(y_acce).any()) # False False
 
@@ -52,7 +58,7 @@ seconds = 3
 
 # For X (Accelerometer) data, the frequency of data collection for your dataset is approximately 
 # 11.75 data points per second and about 0.0118 data points per millisecond.
-frequency_x = 10
+# frequency_x = 10
 
 # For y (Head Position) data, the frequency of data collection for your dataset is approximately
 # 30.00 data points per second and about 0.03 data points per millisecond.
@@ -202,7 +208,7 @@ def train_cvae(models, X_train, y_train, X_test, y_test):
     # plot_model(cvae, to_file='C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\cvae_model.png', show_shapes=True, show_layer_names=True)
 
     for epoch in range(n_epoch):
-        print(f"Epoch {epoch+1}/{n_epoch}")
+        # print(f"Epoch {epoch+1}/{n_epoch}")
         for batch in range(batch_size_train):
             cur_X = X_train[batch].reshape(1, seconds * frequency_x, 3)
             cur_y = y_train[batch].reshape(1, seconds * frequency_y, 2)
@@ -214,8 +220,8 @@ def train_cvae(models, X_train, y_train, X_test, y_test):
             # Did not find a way to solve this problem.
 
         print(f"Epoch {epoch+1}/{n_epoch}: loss = {loss}")
-        if loss[2] < 0.05: # recon_loss
-            break
+        # if loss[2] < 0.05: # recon_loss
+        #     break
 
     encoder_model.save_weights('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\cvae_encoder.h5')
     cvae.save_weights('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\cvae.h5')
