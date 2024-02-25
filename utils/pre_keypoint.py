@@ -1,5 +1,6 @@
 import os
 import json
+import numpy as np
 
 def extract_keypoints(directory):
     keypoints_list = []
@@ -26,22 +27,18 @@ def extract_keypoints(directory):
 
     return keypoints_list
 
-def get_nodding(set_num=0):
-    # Replace 'your_directory_path' with the path to your directory
-    directory_path = f'C:\\Users\\xueyu\\Desktop\\evasion\\dataset{str(set_num)}\\nodding_json'
-    result = extract_keypoints(directory_path)
-    return result
+def get(set_num=0, seconds=3, frequency_y=30, choosing="nodding"):
+    directory= f'C:\\Users\\xueyu\\Desktop\\evasion\\dataset{str(set_num)}\\{choosing}_json'
+    result = extract_keypoints(directory)
 
-def get_shaking(set_num=0):
-    # Replace 'your_directory_path' with the path to your directory
-    directory_path = f'C:\\Users\\xueyu\\Desktop\\evasion\\dataset{str(set_num)}\\shaking_json'
-    result = extract_keypoints(directory_path)
-    return result
+    # trim the result to fit the model
+    result = result[:-(len(result) % (seconds * frequency_y))]
+    result = np.array(result).reshape(-1, seconds * frequency_y, 2)
 
-def get_s_n(set_num=1):
-    # Replace 'your_directory_path' with the path to your directory
-    directory_path = f'C:\\Users\\xueyu\\Desktop\\evasion\\dataset{str(set_num)}\\s_n_json'
-    result = extract_keypoints(directory_path)
+    # normalize the data
+    min_value, max_value = np.min(result), np.max(result)
+    result = (result - min_value) / (max_value - min_value)
+
     return result
 
 def write_into_txt(target, name):
@@ -51,7 +48,7 @@ def write_into_txt(target, name):
                 file.write(f"{pair}\n")
 
 if __name__ == "__main__":
-    nodding = get_nodding()
-    shaking = get_shaking()
+    nodding = get(choosing="nodding")
+    shaking = get(choosing="shaking")
     write_into_txt(nodding, "nodding")
     write_into_txt(shaking, "shaking")

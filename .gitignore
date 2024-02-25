@@ -1,3 +1,4 @@
 *.MOV
-__pycache__
 *.pyc
+*.h5
+*_weights.txt

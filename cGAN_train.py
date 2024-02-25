@@ -4,34 +4,32 @@ from keras.layers import (Input, Dense, Reshape, Flatten,
 from keras.models import Model
 import tensorflow as tf
 
-import pre_sensor_data as psd
-import pre_keypoint as pk
+from utils import pre_keypoint as pk
+from utils import pre_sensor_data as psd
 import numpy as np
 
 from sklearn.model_selection import train_test_split
 
-X_train_acce = psd.regex_get_acc(set_num=1, choosing="nodding")
-y_train_acce = pk.get_nodding(set_num=1)
+X_train_acce, frequency_x = psd.get(set_num=0, seconds=3, choosing="shaking", sensor="accel")
+y_train_acce = pk.get(set_num=0, seconds=3, frequency_y=30, choosing="shaking")
 
-X_train_acce = np.array(X_train_acce, dtype=np.float32)
-y_train_acce = np.array(y_train_acce, dtype=np.float32)
+# trim the data to the same length
+X_train_acce = X_train_acce[:min(len(X_train_acce), len(y_train_acce))]
+y_train_acce = y_train_acce[:min(len(X_train_acce), len(y_train_acce))]
 
 X_training_acce, X_testing_acce = train_test_split(X_train_acce, test_size=0.2, random_state=42)
 y_training_acce, y_testing_acce = train_test_split(y_train_acce, test_size=0.2, random_state=42)
-
-print("X_training_acce.shape: ", X_training_acce.shape, "y_training_acce.shape: ", y_training_acce.shape)
-print("X_testing_acce.shape: ", X_testing_acce.shape, "y_testing_acce.shape: ", y_testing_acce.shape)
 
 lr = 2e-4
 decay = 6e-8
 latent_size = 2
 seconds = 3
-frequency_x = 10
+# frequency_x = 10
 frequency_y = 30
 
 def build_discriminator(x_input, y_input):
     kernel_size = 5
-    layer_filters = [32, 64, 128, 256]
+    layer_filters = [32, 64, 128, 256, 512, 1024]
 
     x = x_input
 
@@ -64,7 +62,7 @@ def build_discriminator(x_input, y_input):
 
 def build_generator(z_input, y_input):
     kernel_size = 5
-    layer_filters = [128, 64, 32, 1]
+    layer_filters = [512, 256, 128, 64, 32, 1]
 
     y = Flatten()(y_input)
     x = concatenate([z_input, y], axis=1)
@@ -120,11 +118,11 @@ def build_and_train():
     data = (X_training_acce, y_training_acce)
     train(models, data)
 
-def generate_real_data(dataset, data_size, begin_x, begin_y):
+def generate_real_data(dataset, data_size):
     X_train, y_train = dataset
-    X_real, y_real = np.array([]), np.array([])
-    X_real = X_train[begin_x: begin_x + frequency_x * seconds * data_size]
-    y_real = y_train[begin_y: begin_y + frequency_y * seconds * data_size]
+    idx = np.random.randint(0, X_train.shape[0], data_size)
+    X_real = X_train[idx]
+    y_real = y_train[idx]
 
     X_real = X_real.reshape(data_size, seconds * frequency_x, 3, 1)
     y_real = y_real.reshape(data_size, seconds * frequency_y, 2)
@@ -132,7 +130,7 @@ def generate_real_data(dataset, data_size, begin_x, begin_y):
 
 def generate_fake_data(generator, data_size):
     z_input, y_input = generate_latent_points(data_size)
-    print("z_input.shape: ", z_input.shape, "y_input.shape: ", y_input.shape)
+    # print("z_input.shape: ", z_input.shape, "y_input.shape: ", y_input.shape)
     X_fake = generator.predict([z_input, y_input])
     return X_fake, y_input
 
@@ -154,14 +152,11 @@ def train(models, data):
     epochs = 10
     half_batch = int(batch_size / 2)
     for epoch in range(epochs):
-        begin_x = 0
-        begin_y = 0
         for batch in range(8):
-            X_real, y_real = generate_real_data(data, half_batch, begin_x, begin_y)
-            X_fake, y_fake = generate_fake_data(generator, half_batch)
+            X_real, y_real = generate_real_data(data, half_batch)
+            X_fake, _ = generate_fake_data(generator, half_batch)
 
-            begin_x += frequency_x * seconds * half_batch
-            begin_y += frequency_y * seconds * half_batch
+            y_fake = y_real
 
             d_out = np.ones((len(X_real), ))
             d_loss1, _ = discriminator.train_on_batch([X_real, y_real], d_out)
@@ -180,7 +175,7 @@ def train(models, data):
             # Compute correlation coefficient for each corresponding row
             for i in range(data1_flat.shape[0]):
                 correlations[i] = np.corrcoef(data1_flat[i], data2_flat[i])[0, 1]
-                print("correlations[i]: ", correlations[i])
+                # print("correlations[i]: ", correlations[i])
                 # print("correlation: ", np.corrcoef(data1_flat[i], data2_flat[i]))
 
             # # Writing correlations to a text file
@@ -200,10 +195,13 @@ def train(models, data):
             #         file.write("\n")
             #         file.flush()
 
-            z_input, y_input = generate_latent_points(batch_size)
+            z_input, _ = generate_latent_points(batch_size)
             gan_out = np.ones((len(z_input,)))
+            _, y_input = generate_real_data(data, batch_size)
+            # print("z_input.shape: ", z_input.shape, "y_real.shape: ", y_real.shape)
             g_loss, _ = gan.train_on_batch([z_input, y_input], gan_out)
-            print("epoch: %d, batch: %d, d_loss1: %f, d_loss2: %f, g_loss: %f" % (epoch, batch, d_loss1, d_loss2, g_loss))
+            print("epoch: %d, batch: %d, d_loss1: %f, d_loss2: %f, g_loss: %f, corr_0: %.2f, corr_1: %.2f" 
+                  % (epoch + 1, batch + 1, d_loss1, d_loss2, g_loss, correlations[0], correlations[1]))
     # generator.save('cgan.h5')
 
 if __name__ == '__main__':

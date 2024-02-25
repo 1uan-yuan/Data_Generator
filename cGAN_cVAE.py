@@ -1,7 +1,8 @@
 import numpy as np
-import pre_keypoint as pk
-import pre_sensor_data as psd
-from tensorflow.keras.optimizers.legacy import Adam, SGD
+from utils import pre_sensor_data as psd
+from utils import pre_keypoint as pk
+from utils import plot as plt
+from tensorflow.keras.optimizers.legacy import Adam
 from keras.layers import (Flatten, Dense, Reshape, concatenate, LeakyReLU,
                           Conv2D, BatchNormalization, Activation, 
                           Conv2DTranspose, Input)
@@ -11,29 +12,10 @@ import cVAE_train
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 
-import matplotlib.pyplot as plt
 import pandas as pd
-X_acce, frequency_x = psd.regex_get_acc(set_num=0, choosing="shaking") # sensor data
-# Shaking accelerometer data from time: 14:33:50:25 to 14:35:56:455
-# Nodding accelerometer data from time: 14:37:43:959 to 14:39:48:394
-y_acce = pk.get_shaking(set_num=0) # head position data
-# shaking from time: 14:33:51:355 to 14:35:52:195
-# nodding from time: 14:37:45:532 to 14:39:44:612
-
-X_acce = np.array(X_acce, dtype=np.float32)
-y_acce = np.array(y_acce, dtype=np.float32)
-
-# normalize the data
-min_x, max_x = np.min(X_acce), np.max(X_acce)
-X_acce = np.subtract(X_acce, min_x) / (max_x - min_x)
-min_y, max_y = np.min(y_acce), np.max(y_acce)
-y_acce = np.subtract(y_acce, min_y) / (max_y - min_y)
-
-X_train_acce, X_test_acce = train_test_split(X_acce, test_size=0.2, random_state=42)
-y_train_acce, y_test_acce = train_test_split(y_acce, test_size=0.2, random_state=42)
 
 latent_size = 2
-n_epoch = 20
+n_epoch = 10
 activ = 'relu'
 lr = 2e-4
 optim = Adam(learning_rate=lr)
@@ -44,6 +26,23 @@ batch_size = 8
 seconds = 3
 # frequency_x = 10
 frequency_y = 30
+
+# X_acce, frequency_x = psd.regex_get_mag(set_num=0, choosing="shaking") # sensor data
+X_acce, frequency_x = psd.get(set_num=0, seconds=seconds, choosing="shaking", sensor="accel") # sensor data
+# Shaking accelerometer data from time: 14:33:50:25 to 14:35:56:455
+# Nodding accelerometer data from time: 14:37:43:959 to 14:39:48:394
+
+y_acce = pk.get(set_num=0, seconds=seconds, frequency_y=frequency_y, choosing="shaking") # head position data
+# y_acce = pk.get_shaking(set_num=0) # head position data
+# shaking from time: 14:33:51:355 to 14:35:52:195
+# nodding from time: 14:37:45:532 to 14:39:44:612
+
+# Trim the data to the same length
+X_acce = X_acce[:min(len(X_acce), len(y_acce))]
+y_acce = y_acce[:min(len(X_acce), len(y_acce))]
+
+X_train_acce, X_test_acce = train_test_split(X_acce, test_size=0.2, random_state=42)
+y_train_acce, y_test_acce = train_test_split(y_acce, test_size=0.2, random_state=42)
 
 def build_discriminator(x_input, y_input):
     kernel_size = 5
@@ -82,10 +81,10 @@ def build_generator(z_input, y_input):
 
     y = Flatten()(y_input)
     x = concatenate([z_input, y], axis=1)
-    # print("x.shape: ", x.shape)
+    print("x.shape: ", x.shape)
     x = Dense(seconds * frequency_x * 3)(x)
     x = Reshape((frequency_x * seconds, 3, 1))(x)
-    # print("x.shape: ", x.shape)
+    print("x.shape: ", x.shape)
     for filters in layer_filters:
         strides = 1
         x = BatchNormalization()(x)
@@ -94,7 +93,7 @@ def build_generator(z_input, y_input):
                             kernel_size=kernel_size,
                             strides=strides,
                             padding='same')(x)
-        # print("x.shape: ", x.shape)
+        print("x.shape: ", x.shape)
 
     x = Activation('sigmoid')(x)
     generator = Model([z_input, y_input], x, name='generator')
@@ -106,7 +105,7 @@ def build_gan(generator, discriminator):
 
     z_input, y_input = generator.input
     g_output = generator.output
-    # print("g_output.shape: ", g_output.shape, "y_input.shape: ", y_input.shape)
+    print("g_output.shape: ", g_output.shape, "y_input.shape: ", y_input.shape)
 
     gan_output = discriminator([g_output, y_input])
     gan_model = Model([z_input, y_input], gan_output)
@@ -123,19 +122,17 @@ def load_cvae(model_weights):
     encoder_model.load_weights(model_weights)
     return encoder_model
 
-def generate_real_data(dataset, data_size, begin_x, begin_y):
+def generate_real_data(dataset, data_size):
     X_train, y_train = dataset
-    X_real, y_real = np.array([]), np.array([])
-    X_real = X_train[begin_x: begin_x + frequency_x * seconds * data_size]
-    y_real = y_train[begin_y: begin_y + frequency_y * seconds * data_size]
+    idx = np.random.randint(0, X_train.shape[0], data_size)
+    
+    X_real = X_train[idx]
+    y_real = y_train[idx]
 
-    X_real = X_real.reshape(data_size, seconds * frequency_x, 3, 1)
-    y_real = y_real.reshape(data_size, seconds * frequency_y, 2)
     return X_real, y_real
 
 def generate_fake_data(generator, cvae_model, data_size, y_input):
     z_input, y_input = get_latent_point_cvae(cvae_model, data_size, y_input)
-    # print("z_input.shape: ", z_input.shape, "y_input.shape: ", y_input.shape)
     X_fake = generator.predict([z_input, y_input])
 
     # normalize the data
@@ -144,9 +141,9 @@ def generate_fake_data(generator, cvae_model, data_size, y_input):
     return X_fake, y_input
 
 def get_latent_point_cvae(cvae_model, data_size, y_input):
-    temp = np.random.random(data_size * seconds * frequency_x * 3)
+    temp = np.random.randn(data_size * seconds * frequency_x * 3)
     x_input = temp.reshape(data_size, seconds * frequency_x, 3)
-    z_cvae = cvae_model.predict([x_input, y_input]) # (data_size, 2)
+    z_cvae = cvae_model.predict([x_input, y_input])
 
     # min_z, max_z = np.min(z_cvae), np.max(z_cvae)
     # z_cvae = np.subtract(z_cvae, min_z) / (max_z - min_z)
@@ -154,24 +151,28 @@ def get_latent_point_cvae(cvae_model, data_size, y_input):
 
 def train(models, dataset):
     generator, discriminator, gan, cvae = models
-
-    batch_per_epoch = 8
-    half_batch = int(batch_size/2)
+    X_train, y_train = dataset
 
     real_values = np.array([])
     fake_values = np.array([])
+
+    batch_per_epoch = 8
+    half_batch = int(batch_size/2)
     
     for epoch in range(n_epoch):
-        begin_x = 0
-        begin_y = 0
         for batch in range(batch_per_epoch):
             # generate real and fake data, each of them is half batch
-            X_real, y_real = generate_real_data(dataset, half_batch, begin_x, begin_y)
+            X_real, y_real = generate_real_data(dataset, half_batch)
             X_fake, y_fake = generate_fake_data(generator, cvae, half_batch, y_real)
+
+            # reshape the data into shape (batch, seconds * frequency, 3D or 2D, 1)
+            X_real = X_real.reshape(-1, seconds * frequency_x, 3, 1)
+            X_fake = X_fake.reshape(-1, seconds * frequency_x, 3, 1)
 
             # start train discriminator
             discriminator.trainable = True
 
+            # train discriminator
             d_out = np.ones((len(X_real), ))
             d_loss1, _ = discriminator.train_on_batch([X_real, y_real], d_out)
 
@@ -181,13 +182,11 @@ def train(models, dataset):
             discriminator.trainable = False
             # end training discriminator
 
-            z_input, y_input = get_latent_point_cvae(cvae, half_batch, y_real)
+            _, y_input = generate_real_data(dataset, batch_size) # choose batch_size y_input
+            z_input, y_input = get_latent_point_cvae(cvae, batch_size, y_input)
 
             gan_out = np.ones((len(z_input), ))
             g_loss, _ = gan.train_on_batch([z_input, y_input], gan_out)
-
-            begin_x += frequency_x * seconds * half_batch
-            begin_y += frequency_y * seconds * half_batch
 
             # store the fake values if we are in the last epoch
             if epoch == n_epoch - 1:
@@ -210,9 +209,12 @@ def train(models, dataset):
         #     break
             
     # generator.save('my_cgan_cvae_generator.h5')
-    plot_3D(real_values, fake_values)
-    plot_1D(real_values, fake_values)
-    plot_time_series(real_values, fake_values)
+    df_real, df_fake = pd.DataFrame(real_values), pd.DataFrame(fake_values)
+    df_real.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_cvae_real.csv', index=False)
+    df_fake.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_cvae_fake.csv', index=False)
+    plt.plot_3D(real_values, fake_values)
+    plt.plot_1D(real_values, fake_values)
+    plt.plot_time_series(real_values, fake_values)
 
 def build_and_train_models(cvae_encoder_file):
     # build the discriminator
@@ -233,62 +235,15 @@ def build_and_train_models(cvae_encoder_file):
     data = (X_train_acce, y_train_acce)
     train(models, data)
 
-def plot_3D(real_values, fake_values):
-    # print("real_values.shape: ", real_values.shape, "fake_values.shape: ", fake_values.shape)
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    x1, y1, z1 = real_values[::3], real_values[1::3], real_values[2::3]
-    x2, y2, z2 = fake_values[::3], fake_values[1::3], fake_values[2::3]
+# def main():
+#     # In this function, we will use build_and_train_models to train the models
+#     global n_epoch
+#     n_epochs = [10, 20, 30, 40, 50]
+    
+#     for n_epoch in n_epochs:
+#         build_and_train_models("C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\cvae_encoder.h5")
 
-    ax.scatter(x1, y1, z1, c='r', label='real')
-    ax.scatter(x2, y2, z2, c='b', label='fake')
-
-    ax.set_xlabel('X Label')
-    ax.set_ylabel('Y Label')
-    ax.set_zlabel('Z Label')
-    ax.legend()
-    plt.show()
-
-def plot_1D(real_values, fake_values):
-    fig, axs = plt.subplots(1, 3, figsize=(18, 5))
-    x1, y1, z1 = real_values[::3], real_values[1::3], real_values[2::3]
-    x2, y2, z2 = fake_values[::3], fake_values[1::3], fake_values[2::3]
-
-    # Plotting x1 and x2 in the first subplot
-    axs[0].plot(x1, label='Real x', marker='o')
-    axs[0].plot(x2, label='Fake x', marker='^')
-    axs[0].set_title('X comparison')
-    axs[0].legend()
-
-    # Plotting y1 and y2 in the second subplot
-    axs[1].plot(y1, label='Real y', marker='o')
-    axs[1].plot(y2, label='Fake y', marker='^')
-    axs[1].set_title('Y comparison')
-    axs[1].legend()
-
-    # Plotting z1 and z2 in the third subplot
-    axs[2].plot(z1, label='Real z', marker='o')
-    axs[2].plot(z2, label='Fake z', marker='^')
-    axs[2].set_title('Z comparison')
-    axs[2].legend()
-
-    plt.tight_layout()
-    plt.show()
-
-def plot_time_series(real_values, fake_values):
-    ts1 = pd.Series(real_values) # real data
-    ts2 = pd.Series(fake_values) # fake data
-
-    plt.figure(figsize=(12, 6))
-    plt.plot(ts1.index, ts1.values, label='Real data', linewidth=2, linestyle='-')
-    plt.plot(ts2.index, ts2.values, label='Fake data', linewidth=2, linestyle='--')
-    plt.grid(True)
-    plt.legend(loc='best')
-    plt.title('Time Series Data')
-    plt.xlabel('Date')
-    plt.ylabel('Value')
-    plt.show()
-
-
-
+# if __name__ == "__main__":
+#     main()
+    
 build_and_train_models("C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\cvae_encoder.h5")
