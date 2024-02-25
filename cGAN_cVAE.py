@@ -169,7 +169,7 @@ def train(models, dataset):
             X_real = X_real.reshape(-1, seconds * frequency_x, 3, 1)
             X_fake = X_fake.reshape(-1, seconds * frequency_x, 3, 1)
 
-            # start train discriminator
+            # start training discriminator
             discriminator.trainable = True
 
             # train discriminator
@@ -212,9 +212,9 @@ def train(models, dataset):
     df_real, df_fake = pd.DataFrame(real_values), pd.DataFrame(fake_values)
     df_real.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_cvae_real.csv', index=False)
     df_fake.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_cvae_fake.csv', index=False)
-    plt.plot_3D(real_values, fake_values)
-    plt.plot_1D(real_values, fake_values)
-    plt.plot_time_series(real_values, fake_values)
+    plt.plot_3D(real_values, fake_values, limit=(0, 1))
+    plt.plot_1D(real_values, fake_values, limit=(0, 1))
+    # plt.plot_time_series(real_values, fake_values)
 
 def build_and_train_models(cvae_encoder_file):
     # build the discriminator

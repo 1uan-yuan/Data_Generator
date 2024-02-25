@@ -9,6 +9,8 @@ from utils import pre_sensor_data as psd
 import numpy as np
 
 from sklearn.model_selection import train_test_split
+import pandas as pd
+from utils import plot as plt
 
 X_train_acce, frequency_x = psd.get(set_num=0, seconds=3, choosing="shaking", sensor="accel")
 y_train_acce = pk.get(set_num=0, seconds=3, frequency_y=30, choosing="shaking")
@@ -22,7 +24,7 @@ y_training_acce, y_testing_acce = train_test_split(y_train_acce, test_size=0.2, 
 
 lr = 2e-4
 decay = 6e-8
-latent_size = 2
+latent_size = 5
 seconds = 3
 # frequency_x = 10
 frequency_y = 30
@@ -148,9 +150,10 @@ def train(models, data):
     # The relationship of batch_size, num_batches and data_size:
     # 
     #     batch_num = min(size of X / seconds * frequency_x * half_batch, size of y / seconds * frequency_y * half_batch)
-    batch_size = 4
+    batch_size = 8
     epochs = 10
     half_batch = int(batch_size / 2)
+    real_values, fake_values = np.array([]), np.array([])
     for epoch in range(epochs):
         for batch in range(8):
             X_real, y_real = generate_real_data(data, half_batch)
@@ -158,11 +161,21 @@ def train(models, data):
 
             y_fake = y_real
 
+            # Start training discriminator
+            discriminator.trainable = True
+
             d_out = np.ones((len(X_real), ))
             d_loss1, _ = discriminator.train_on_batch([X_real, y_real], d_out)
 
             d_out = np.zeros((len(X_fake), ))
             d_loss2, _ = discriminator.train_on_batch([X_fake, y_fake], d_out)
+
+            discriminator.trainable = False
+            # End training discriminator
+
+            if epoch == epochs - 1:
+                real_values = np.append(real_values, X_real)
+                fake_values = np.append(fake_values, X_fake)
 
             # Get the correlation between X_real and X_fake
             # Change X_real and X_fake to 2D
@@ -203,6 +216,13 @@ def train(models, data):
             print("epoch: %d, batch: %d, d_loss1: %f, d_loss2: %f, g_loss: %f, corr_0: %.2f, corr_1: %.2f" 
                   % (epoch + 1, batch + 1, d_loss1, d_loss2, g_loss, correlations[0], correlations[1]))
     # generator.save('cgan.h5')
+    # Use real_value and fake_value to plot the data
+    df_real, df_fake = pd.DataFrame(real_values), pd.DataFrame(fake_values)
+    df_real.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_real.csv', index=False)
+    df_fake.to_csv('C:\\Users\\xueyu\\Desktop\\evasion\\Data_Generator\\csv_data\\cgan_fake.csv', index=False)
+    plt.plot_3D(real_values, fake_values, limit=(0, 1))
+    plt.plot_1D(real_values, fake_values, limit=(0, 1))
+    # plt.plot_time_series(real_values, fake_values)
 
 if __name__ == '__main__':
     build_and_train()
