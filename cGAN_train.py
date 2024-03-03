@@ -49,7 +49,8 @@ def build_discriminator(x_input, y_input):
         x = Conv2D(filters=filters,
                    kernel_size=kernel_size,
                    strides=strides,
-                   padding='same')(x)
+                   padding='same',
+                   kernel_regularizer=tf.keras.regularizers.L1L2(l1=0.01, l2=0.01))(x)
 
     x = Flatten()(x)
     x = Dense(1, activation='sigmoid')(x)
@@ -68,7 +69,6 @@ def build_generator(z_input, y_input):
 
     y = Flatten()(y_input)
     x = concatenate([z_input, y], axis=1)
-    print("x.shape: ", x.shape)
     x = Dense(3 * frequency_x * seconds)(x)
     x = Reshape((frequency_x * seconds, 3, 1))(x)
     for filters in layer_filters:
@@ -79,7 +79,6 @@ def build_generator(z_input, y_input):
                             kernel_size=kernel_size,
                             strides=strides,
                             padding='same')(x)
-        print("x.shape: ", x.shape)
 
     x = Activation('sigmoid')(x)
     generator = Model([z_input, y_input], x, name='generator')
